@@ -4,10 +4,10 @@ const { chromium, devices } = require('playwright');
 const USER_STATE = process.env.USER_STATE || 'California';
 const TARGET_URL = process.env.LANDING_PAGE_URL || 'https://securedrive-insurance.com/quotes/';
 
-// Core Decodo Credentials from GitHub Secrets
-const PROXY_SERVER = process.env.PROXY_SERVER || 'http://gate.decodo.com:10002';
-const BASE_USERNAME = process.env.PROXY_USERNAME || 'spjcjqkpfq';
-const PROXY_PASSWORD = process.env.PROXY_PASSWORD || 'fmd74wEhNbCr8=1gfE';
+// Core Decodo Credentials / Defaults
+const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
+const DEFAULT_USERNAME = 'spjcjqkpfq';
+const DEFAULT_PASSWORD = 'fmd74wEhNbCr8=1gfE';
 
 // RANDOM DELAY FUNCTION
 const randomDelay = (min = 2000, max = 5000) => {
@@ -25,23 +25,45 @@ const iphoneModels = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 14 Pro', 'i
   const displayVersion = randomVersion.replace(/_/g, '.');
   const customUA = `Mozilla/5.0 (${randomModel}; CPU iPhone OS ${randomVersion} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${displayVersion} Mobile/15E148 Safari/604.1`;
 
+  // CLEAN & SANITIZE ENVIRONMENT VARIABLES
+  const envServer = (process.env.PROXY_SERVER || '').trim().replace(/^["']|["']$/g, '');
+  const envUser = (process.env.PROXY_USERNAME || '').trim().replace(/^["']|["']$/g, '');
+  const envPass = (process.env.PROXY_PASSWORD || '').trim().replace(/^["']|["']$/g, '');
+
+  const baseServer = envServer.length > 5 ? envServer : DEFAULT_SERVER;
+  const baseUsername = envUser.length > 0 ? envUser : DEFAULT_USERNAME;
+  const basePassword = envPass.length > 0 ? envPass : DEFAULT_PASSWORD;
+
   // AUTOMATIC DECODO STATE TARGETING ENGINE
-  let finalUsername = BASE_USERNAME;
-  
-  if (BASE_USERNAME && USER_STATE) {
+  let finalUsername = baseUsername;
+  if (USER_STATE) {
     const formattedState = USER_STATE.toLowerCase().trim().replace(/\s+/g, '_');
     const randomSession = Math.floor(10000 + Math.random() * 90000);
-    finalUsername = `user-${BASE_USERNAME}-country-us-state-us_${formattedState}-session-${randomSession}`;
-  } else {
-    const randomSession = Math.floor(10000 + Math.random() * 90000);
-    finalUsername = `user-${BASE_USERNAME}-country-us-session-${randomSession}`;
+    finalUsername = `user-${baseUsername}-country-us-state-us_${formattedState}-session-${randomSession}`;
   }
 
-  const proxyConfig = PROXY_SERVER ? {
-    server: PROXY_SERVER,
-    username: finalUsername,
-    password: PROXY_PASSWORD
-  } : undefined;
+  // BUILD VALIDATED PROXY CONFIG
+  let serverUrl = baseServer;
+  if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://') && !serverUrl.startsWith('socks5://')) {
+    serverUrl = `http://${serverUrl}`;
+  }
+
+  let proxyConfig;
+  try {
+    const parsed = new URL(serverUrl);
+    proxyConfig = {
+      server: `${parsed.protocol}//${parsed.host}`,
+      username: finalUsername,
+      password: basePassword
+    };
+  } catch (urlErr) {
+    console.log(`[Proxy Notice] Reverting to default endpoint due to URL format.`);
+    proxyConfig = {
+      server: DEFAULT_SERVER,
+      username: finalUsername,
+      password: DEFAULT_PASSWORD
+    };
+  }
 
   const browser = await chromium.launch({ 
     headless: true,
@@ -60,10 +82,9 @@ const iphoneModels = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 14 Pro', 'i
 
   try {
     console.log(`Profile Launch: ${randomModel} | iOS ${displayVersion}`);
-    if (PROXY_SERVER) {
-      console.log(`Targeting geo-location state: ${USER_STATE}`);
-      console.log(`Decodo Authenticated User String: ${finalUsername}`);
-    }
+    console.log(`Targeting geo-location state: ${USER_STATE}`);
+    console.log(`Decodo Authenticated User String: ${finalUsername}`);
+    console.log(`Using Proxy Endpoint: ${proxyConfig.server}`);
     
     const startTime = Date.now();
     
