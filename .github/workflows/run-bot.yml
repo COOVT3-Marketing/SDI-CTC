@@ -8,7 +8,7 @@ on:
         required: false
         default: 'California'
   schedule:
-    - cron: '0 */3 * * *' # Har 3 ghante baad automatic run hoga
+    - cron: '0 */3 * * *'
 
 jobs:
   run-bot:
@@ -22,10 +22,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm install
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
