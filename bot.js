@@ -73,7 +73,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await delay(3000);
 
-    console.log("2. Simulating Scroll and Waiting for Certificates (TrustedForm/Jornaya)...");
+    console.log("2. Simulating Scroll and Waiting for Certificates...");
     await page.evaluate(() => window.scrollBy({ top: 300, behavior: 'smooth' }));
 
     await page.waitForFunction(() => {
@@ -86,6 +86,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     const payloadResult = await page.evaluate(async (webhookUrl) => {
       try {
+        // Fetch Public IP Address
         let publicIp = "";
         try {
           const ipRes = await fetch('https://api.ipify.org?format=json');
@@ -95,12 +96,15 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
           console.log("Failed to fetch IP:", ipErr);
         }
 
+        // Extract TrustedForm Full Cert URL
         const certUrl = document.getElementById('xxTrustedFormCertUrl')?.value || 
                         document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || "";
 
+        // Extract Ping URL
         const pingUrl = document.getElementById('xxTrustedFormPingUrl_0')?.value || 
                         document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
 
+        // Extract ONLY clean 40-character token ID
         let rawToken = document.getElementById('xxTrustedFormToken_0')?.value || "";
         if (!rawToken && certUrl) {
           const match = certUrl.match(/([a-f0-9]{40})/i);
@@ -110,17 +114,19 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
           rawToken = parts[parts.length - 1];
         }
 
+        // Extract Jornaya Lead ID
         const jornayaId = document.getElementById('leadid_token')?.value || 
                           document.querySelector('input[name="jornaya_leadid"]')?.value || "";
 
+        // Payload Key Names standardizing with Google Apps Script expectance
         const payload = {
           submissionType: "CLICK_TO_CALL",
           ipAddress: publicIp,
           pageUrl: window.location.href,
-          xxTrustedFormCertUrl: certUrl,
-          xxTrustedFormToken: rawToken,
-          xxTrustedFormPingUrl: pingUrl,
-          jornayaLeadId: jornayaId,
+          xxTrustedFormUrl: certUrl,         // Matches data.xxTrustedFormUrl in Apps Script
+          xxTrustedFormToken: rawToken,       // Clean ID for data.xxTrustedFormToken
+          xxTrustedFormPingUrl: pingUrl,     // Matches data.xxTrustedFormPingUrl
+          jornayaLeadId: jornayaId,          // Matches data.jornayaLeadId
           timestamp: new Date().toISOString()
         };
 
