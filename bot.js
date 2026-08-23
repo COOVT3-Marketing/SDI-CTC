@@ -67,41 +67,68 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
   });
 
   const page = await context.newPage();
+  const startTime = Date.now();
 
   try {
     console.log(`1. Navigating to landing page: ${TARGET_URL}`);
     await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
-    
-    // Initial human wait time
-    await delay(2000);
+    await delay(getRandomInt(2000, 3500));
 
-    console.log("2. Simulating realistic user behavior (Touch & Smooth Scroll)...");
-    
-    // Simulate Touch Movement (TrustedForm tracks event listeners)
-    await page.touchscreen.tap(200, 300);
-    await delay(1000);
+    console.log("2. Simulating realistic human scrolling & reading behavior...");
 
-    // Scroll down gradually to trigger TrustedForm time-on-page tracking
-    for (let i = 0; i < 5; i++) {
-      await page.evaluate(() => window.scrollBy({ top: 150, behavior: 'smooth' }));
-      await delay(1500);
+    // Get full page height for dynamic reading simulation
+    const pageHeight = await page.evaluate(() => document.body.scrollHeight);
+    let currentScroll = 0;
+
+    // Scroll down gradually with random intervals and distances
+    while (currentScroll < pageHeight - 600) {
+      const scrollStep = getRandomInt(200, 450);
+      currentScroll += scrollStep;
+      
+      await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'smooth' }), currentScroll);
+      
+      // Touch tap simulation for mobile event tracking
+      if (Math.random() > 0.5) {
+        await page.touchscreen.tap(getRandomInt(50, 300), getRandomInt(200, 600)).catch(() => {});
+      }
+
+      // Reading pause delay (2 to 4 seconds)
+      await delay(getRandomInt(2000, 4000));
     }
 
-    // Scroll slightly up again to mimic human viewing
-    await page.evaluate(() => window.scrollBy({ top: -100, behavior: 'smooth' }));
-    await delay(2000);
+    console.log("3. Scrolling back up to the Click-to-Call card...");
+    await delay(getRandomInt(1500, 3000));
+    
+    // Smooth scroll back to top/card section
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    await delay(getRandomInt(2000, 3000));
 
-    console.log("3. Waiting for Certificates to load...");
+    // Wait for TrustedForm / Jornaya inputs to be ready
     await page.waitForFunction(() => {
       const tf = document.getElementById('xxTrustedFormCertUrl')?.value || document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value;
       const jn = document.getElementById('leadid_token')?.value || document.querySelector('input[name="jornaya_leadid"]')?.value;
       return Boolean(tf || jn);
     }, { timeout: 15000 }).catch(() => console.log("⚠️ Token load timeout. Proceeding with current DOM state..."));
 
-    // Ensure total on-page time is ~10-12 seconds before sending webhook
-    await delay(2000);
+    console.log("4. Simulating click on Click-to-Call button/card...");
+    const callBtn = page.locator('a[href^="tel:"], button:has-text("Call"), a:has-text("Call"), .click-to-call').first();
+    if (await callBtn.count() > 0) {
+      await callBtn.click({ force: true }).catch(() => {});
+    } else {
+      await page.touchscreen.tap(196, 400).catch(() => {});
+    }
 
-    console.log("4. Extracting IP, Tokens & Triggering Webhook Payload...");
+    // Dynamic delay buffer to guarantee 35 to 40 seconds total time on page
+    const elapsedMs = Date.now() - startTime;
+    const targetMs = getRandomInt(35000, 40000); // 35 to 40 seconds target
+    const remainingWait = targetMs - elapsedMs;
+
+    if (remainingWait > 0) {
+      console.log(`⏱️ Maintaining session time... Waiting additional ${(remainingWait / 1000).toFixed(1)}s to reach 35-40s target.`);
+      await delay(remainingWait);
+    }
+
+    console.log("5. Extracting IP, Tokens & Triggering Webhook Payload...");
 
     const payloadResult = await page.evaluate(async (webhookUrl) => {
       try {
@@ -162,7 +189,6 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
       console.log("❌ [WEBHOOK FAILED]:", payloadResult.error);
     }
 
-    // Keep page open for 2 extra seconds after sending payload to let TrustedForm sync
     await delay(2000);
 
   } catch (error) {
