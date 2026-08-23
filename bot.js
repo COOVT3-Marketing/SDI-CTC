@@ -99,113 +99,55 @@ const getRandomMobileProfile = () => {
   page.on('response', response => {
     const url = response.url();
     if (url.includes('script.google.com') || url.includes('exec')) {
-      console.log(`🎯 [GOOGLE SHEET WEBHOOK SUCCESS]: Status ${response.status()} -> ${url}`);
+      console.log(`🎯 [GOOGLE SHEET WEBHOOK FIRED]: Status ${response.status()} -> ${url}`);
     }
   });
 
   try {
     console.log(`1. Navigating to landing page: ${TARGET_URL}`);
-    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await delay(3000);
+    // Wait until network is idle so TrustedForm & Jornaya scripts finish loading tokens into hidden fields
+    await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
+    await delay(2000);
 
-    // Prevent 'tel:' links from triggering system dialer popups
-    await page.evaluate(() => {
-      window.addEventListener('click', (e) => {
-        const link = e.target.closest('a[href^="tel:"]');
-        if (link) {
-          e.preventDefault();
-          console.log("Captured tel link click natively without breaking JS execution.");
-        }
-      }, true);
-    });
-
-    console.log("2. Simulating Human Research Behavior (Scrolling & Pausing)...");
+    console.log("2. Simulating Human Behavior (Scrolling & Token Population Check)...");
     
     // Smooth Scroll Down
     const scrollAmount1 = getRandomInt(200, 400);
     await page.evaluate((amt) => window.scrollBy({ top: amt, behavior: 'smooth' }), scrollAmount1);
     await delay(getRandomInt(2000, 3000));
 
-    // Touch Tap Simulation
-    await page.touchscreen.tap(getRandomInt(100, 250), getRandomInt(200, 400));
-    await delay(getRandomInt(1500, 2500));
-
-    // Smooth Scroll Down 2
-    const scrollAmount2 = getRandomInt(300, 500);
-    await page.evaluate((amt) => window.scrollBy({ top: amt, behavior: 'smooth' }), scrollAmount2);
-    await delay(getRandomInt(2000, 3000));
+    // Wait until TrustedForm OR Jornaya inputs are actually populated with values
+    await page.waitForFunction(() => {
+      const tfCert = document.getElementById('xxTrustedFormCertUrl')?.value || document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value;
+      const jToken = document.getElementById('leadid_token')?.value || document.querySelector('input[name="jornaya_leadid"]')?.value;
+      return Boolean(tfCert || jToken);
+    }, { timeout: 15000 }).catch(() => console.log("⚠️ Token loading timeout reached. Triggering click anyway..."));
 
     // Scroll slightly up
-    await page.evaluate(() => window.scrollBy({ top: -150, behavior: 'smooth' }));
-    await delay(2000);
+    await page.evaluate(() => window.scrollBy({ top: -100, behavior: 'smooth' }));
+    await delay(1500);
 
     console.log("3. Locating Call CTA Button...");
-    const callButton = page.locator('a[href^="tel:"], button:has-text("Call"), a:has-text("Call")').first();
+    const callButton = page.locator('#callNowBtn, a[href^="tel:"]').first();
 
     if (await callButton.isVisible({ timeout: 10000 })) {
       await callButton.scrollIntoViewIfNeeded({ behavior: 'smooth' });
-      await delay(1500);
+      await delay(1000);
 
+      console.log("4. Executing Natural Human Click/Tap on CTA...");
+      
       const box = await callButton.boundingBox();
       if (box) {
-        console.log("4. Executing Native Human Touch Tap on Call Button...");
         const tapX = box.x + box.width / 2;
         const tapY = box.y + box.height / 2;
-        
+        // Native touch tap triggers all inline onclick & page event listeners cleanly
         await page.touchscreen.tap(tapX, tapY);
-        console.log("Touch Tap Dispatched!");
       } else {
         await callButton.click();
       }
 
-      await delay(3000);
-
-      console.log("5. Extracting TrustedForm & Executing Form Listener Payload...");
-      await page.evaluate(async (pageUrl) => {
-        const rawCertUrl = document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || 
-                          window.xxTrustedFormCertUrl || "";
-        const certUrlStr = String(rawCertUrl || "");
-        
-        const rawPingUrl = document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
-        const pingUrlStr = String(rawPingUrl || "");
-        
-        let token = "";
-        if (certUrlStr && certUrlStr.includes('/')) {
-          const parts = certUrlStr.split('/');
-          token = parts[parts.length - 1] || "";
-        }
-
-        const rawJornaya = document.querySelector('input[name="universal_leadid"]')?.value || "";
-        const jornayaIdStr = String(rawJornaya || "");
-
-        console.log(`Extracted TrustedForm Token: ${token}`);
-
-        const payload = {
-          submissionType: "CLICK_TO_CALL",
-          ipAddress: "",
-          pageUrl: pageUrl,
-          xxTrustedFormUrl: certUrlStr,
-          xxTrustedFormToken: token,
-          xxTrustedFormPingUrl: pingUrlStr,
-          jornayaLeadId: jornayaIdStr
-        };
-
-        // Fire directly to any Google Sheet forms/scripts attached in DOM
-        const forms = document.querySelectorAll('form');
-        forms.forEach(f => {
-          if (f.action && f.action.includes('script.google.com')) {
-            fetch(f.action, {
-              method: 'POST',
-              mode: 'no-cors',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            }).catch(() => {});
-          }
-        });
-      }, TARGET_URL);
-
-      console.log("Waiting 12 seconds for background processes and Apps Script response...");
-      await delay(12000);
+      console.log("5. Clicked successfully! Waiting for page listener to send payload to Google Sheet...");
+      await delay(10000);
 
     } else {
       console.log("❌ Call CTA button not found on page.");
