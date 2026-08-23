@@ -10,7 +10,6 @@ const DEFAULT_PASSWORD = 'fmd74wEhNbCr8=1gfE';
 const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Random Mobile Profiles Generator
 const getRandomMobileProfile = () => {
   const mobileDevices = [
     {
@@ -96,7 +95,7 @@ const getRandomMobileProfile = () => {
 
   const page = await context.newPage();
 
-  // Monitor Network Responses for Google Apps Script Webhook
+  // Monitor for Google Sheet Webhook Execution
   page.on('response', response => {
     const url = response.url();
     if (url.includes('script.google.com') || url.includes('exec')) {
@@ -107,7 +106,7 @@ const getRandomMobileProfile = () => {
   try {
     console.log(`1. Navigating to landing page: ${TARGET_URL}`);
     await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await delay(getRandomInt(3000, 5000));
+    await delay(3000);
 
     // Prevent 'tel:' link from opening system dialer popup
     await page.evaluate(() => {
@@ -120,49 +119,88 @@ const getRandomMobileProfile = () => {
       }, true);
     });
 
-    // HUMAN BEHAVIOR SIMULATION (Research & Reading Phase)
     console.log("2. Simulating Human Research Behavior (Scrolling & Pausing)...");
     
-    // Scroll Down 1
-    await page.evaluate(() => window.scrollBy({ top: getRandomInt(200, 400), behavior: 'smooth' }));
-    await delay(getRandomInt(2000, 4000)); // Reading time
-
-    // Touch gesture on content
-    await page.touchscreen.tap(getRandomInt(100, 250), getRandomInt(200, 400));
-    await delay(getRandomInt(1500, 3000));
-
-    // Scroll Down 2
-    await page.evaluate(() => window.scrollBy({ top: getRandomInt(300, 500), behavior: 'smooth' }));
-    await delay(getRandomInt(3000, 5000)); // Reading time
-
-    // Scroll slightly up (human re-reading)
-    await page.evaluate(() => window.scrollBy({ top: -150, behavior: 'smooth' }));
+    // Smooth Scroll Down (Node scope values passed explicitly)
+    const scrollAmount1 = getRandomInt(200, 400);
+    await page.evaluate((amt) => window.scrollBy({ top: amt, behavior: 'smooth' }), scrollAmount1);
     await delay(getRandomInt(2000, 3000));
 
-    // LOCATE CLICK-TO-CALL BUTTON
+    // Touch Tap Simulation
+    await page.touchscreen.tap(getRandomInt(100, 250), getRandomInt(200, 400));
+    await delay(getRandomInt(1500, 2500));
+
+    // Smooth Scroll Down 2
+    const scrollAmount2 = getRandomInt(300, 500);
+    await page.evaluate((amt) => window.scrollBy({ top: amt, behavior: 'smooth' }), scrollAmount2);
+    await delay(getRandomInt(2000, 3000));
+
+    // Scroll slightly up
+    await page.evaluate(() => window.scrollBy({ top: -150, behavior: 'smooth' }));
+    await delay(2000);
+
     console.log("3. Locating Call CTA Button...");
     const callButton = page.locator('a[href^="tel:"], button:has-text("Call"), a:has-text("Call")').first();
 
     if (await callButton.isVisible({ timeout: 10000 })) {
       await callButton.scrollIntoViewIfNeeded({ behavior: 'smooth' });
-      await delay(getRandomInt(1500, 3000));
+      await delay(1500);
 
       const box = await callButton.boundingBox();
       if (box) {
         console.log("4. Executing Native Human Touch Tap on Call Button...");
-        const tapX = box.x + box.width / 2 + getRandomInt(-5, 5);
-        const tapY = box.y + box.height / 2 + getRandomInt(-3, 3);
+        const tapX = box.x + box.width / 2;
+        const tapY = box.y + box.height / 2;
         
-        // Dispatch real physical touch event
         await page.touchscreen.tap(tapX, tapY);
-        console.log("Tap Event Dispatched Successfully!");
+        console.log("Touch Tap Dispatched!");
       } else {
         await callButton.click();
       }
 
-      // Allow site's internal JavaScript to trigger Google Sheet Webhook / AJAX
-      console.log("5. Waiting for page scripts to process TrustedForm & send payload to Google Sheet...");
-      await delay(12000);
+      await delay(3000);
+
+      // FORCE TRIGGER CLICK_TO_CALL TO GOOGLE SHEET WEBHOOK IF DOM LISTENER SKIPPED
+      console.log("5. Triggering Click-To-Call Webhook Event with TrustedForm Certificate...");
+      await page.evaluate(async (pageUrl) => {
+        const certUrl = document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || 
+                        window.xxTrustedFormCertUrl || "";
+        const pingUrl = document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
+        
+        let token = "";
+        if (certUrl) {
+          const parts = certUrl.split('/');
+          token = parts[parts.length - 1] || "";
+        }
+
+        const jornayaId = document.querySelector('input[name="universal_leadid"]')?.value || "";
+
+        const payload = {
+          submissionType: "CLICK_TO_CALL",
+          ipAddress: "",
+          pageUrl: pageUrl,
+          xxTrustedFormUrl: certUrl,
+          xxTrustedFormToken: token,
+          xxTrustedFormPingUrl: pingUrl,
+          jornayaLeadId: jornayaId
+        };
+
+        // If page has a global submit function or form action to google script
+        const forms = document.querySelectorAll('form');
+        forms.forEach(f => {
+          if (f.action && f.action.includes('script.google.com')) {
+            fetch(f.action, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            }).catch(() => {});
+          }
+        });
+      }, TARGET_URL);
+
+      console.log("Waiting 15 seconds for Google Apps Script to write to Sheet...");
+      await delay(15000);
 
     } else {
       console.log("❌ Call CTA button not found on page.");
