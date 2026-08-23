@@ -1,0 +1,12 @@
+{
+  "name": "securedrive-click-to-call-bot",
+  "version": "1.0.0",
+  "description": "Playwright Mobile Human Emulation Click-to-Call Bot",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  }
+}
