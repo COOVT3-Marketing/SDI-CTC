@@ -50,72 +50,55 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     };
   }
 
-  console.log(`[PROXY CONFIG]: Routing through ${proxyConfig.server} | Session: ${finalUsername}`);
-
-  const browser = await chromium.launch({ 
-    headless: false,
-    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-setuid-sandbox'],
-    proxy: proxyConfig
-  });
-
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-    viewport: { width: 393, height: 852 },
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-    locale: 'en-US',
-    timezoneId: 'America/New_York'
-  });
-
-  const page = await context.newPage();
-
-  try {
-    console.log(`1. Navigating to landing page: ${TARGET_URL}`);
-    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await delay(3000);
-
-    console.log("2. Simulating Scroll and Waiting for Certificates (TrustedForm/Jornaya)...");
-    await page.evaluate(() => window.scrollBy({ top: 300, behavior: 'smooth' }));
-
-    // Wait until TF Cert or Jornaya Token populates into the DOM
-    await page.waitForFunction(() => {
-      const tf = document.getElementById('xxTrustedFormCertUrl')?.value || document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value;
-      const jn = document.getElementById('leadid_token')?.value || document.querySelector('input[name="jornaya_leadid"]')?.value;
-      return Boolean(tf || jn);
-    }, { timeout: 15000 }).catch(() => console.log("⚠️ Token load timeout. Proceeding with current DOM state..."));
-
-    console.log("3. Extracting Tokens & Triggering Webhook Payload...");
+console.log("3. Extracting IP, Tokens & Triggering Webhook Payload...");
 
     const payloadResult = await page.evaluate(async (webhookUrl) => {
       try {
+        // Fetch public IP address directly inside browser context (uses proxy IP)
+        let publicIp = "";
+        try {
+          const ipRes = await fetch('https://api.ipify.org?format=json');
+          const ipData = await ipRes.json();
+          publicIp = ipData.ip || "";
+        } catch (ipErr) {
+          console.log("Failed to fetch IP:", ipErr);
+        }
+
+        // 1. Extract Full Certificate URL
         const certUrl = document.getElementById('xxTrustedFormCertUrl')?.value || 
                         document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || "";
 
+        // 2. Extract Ping URL
         const pingUrl = document.getElementById('xxTrustedFormPingUrl_0')?.value || 
                         document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
 
+        // 3. Extract ONLY clean 40-char token
         let rawToken = document.getElementById('xxTrustedFormToken_0')?.value || "";
-        if (!rawToken && certUrl.includes('/')) {
-          const parts = certUrl.split('/');
-          rawToken = parts[parts.length - 1] || "";
+        if (!rawToken && certUrl) {
+          const match = certUrl.match(/([a-f0-9]{40})/i);
+          rawToken = match ? match[1] : "";
+        } else if (rawToken.includes('/')) {
+          const parts = rawToken.split('/');
+          rawToken = parts[parts.length - 1];
         }
 
+        // 4. Extract Jornaya Lead ID
         const jornayaId = document.getElementById('leadid_token')?.value || 
                           document.querySelector('input[name="jornaya_leadid"]')?.value || "";
 
         const payload = {
           submissionType: "CLICK_TO_CALL",
+          ipAddress: publicIp,               // 🎯 Public IP Address Added
           pageUrl: window.location.href,
-          xxTrustedFormCertUrl: certUrl,
-          xxTrustedFormToken: rawToken,
-          xxTrustedFormPingUrl: pingUrl,
+          xxTrustedFormCertUrl: certUrl,     // Full URL
+          xxTrustedFormToken: rawToken,       // Clean Token ID only
+          xxTrustedFormPingUrl: pingUrl,     // Full Ping URL
           jornayaLeadId: jornayaId,
           timestamp: new Date().toISOString()
         };
 
         // Send to Apps Script Webhook
-        const res = await fetch(webhookUrl, {
+        await fetch(webhookUrl, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -127,7 +110,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
         return { success: false, error: err.toString() };
       }
     }, GOOGLE_WEBHOOK_URL);
-
+  
     if (payloadResult.success) {
       console.log("🎯 [WEBHOOK SENT SUCCESSFULLY]:", JSON.stringify(payloadResult.payload));
     } else {
