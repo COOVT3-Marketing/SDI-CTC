@@ -57,12 +57,15 @@ const iphoneModels = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 14 Pro', 'i
     };
   }
 
+  // Launch Chromium with headless: false under Xvfb (Bypasses headless detectors)
   const browser = await chromium.launch({ 
-    headless: true,
+    headless: false,
     args: [
       '--disable-blink-features=AutomationControlled',
       '--no-sandbox',
-      '--disable-setuid-sandbox'
+      '--disable-setuid-sandbox',
+      '--disable-infobars',
+      '--window-size=390,844'
     ],
     proxy: proxyConfig
   });
@@ -75,12 +78,14 @@ const iphoneModels = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 14 Pro', 'i
     locale: 'en-US',
     timezoneId: 'America/New_York',
     hasTouch: true,
-    isMobile: true
+    isMobile: true,
+    viewport: { width: 390, height: 844 }
   });
 
-  // STEALTH EVALUATE: Override navigator.webdriver to bypass TrustedForm Bot Shield
+  // Stealth script: Overwrite automation indicators
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {} };
   });
 
   const page = await context.newPage();
@@ -94,65 +99,79 @@ const iphoneModels = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 14 Pro', 'i
     
     // STEP 1: LOAD LANDING PAGE
     console.log(`Navigating to landing page: ${TARGET_URL}`);
-    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
     
-    // Allow TrustedForm / GTM scripts to initialize fully
-    await page.waitForTimeout(5000);
-    console.log("Quotes page and tracking scripts loaded successfully.");
+    // Wait for TrustedForm script to fully initialize
+    await page.waitForTimeout(4000);
+    console.log("Page and TrustedForm scripts initialized.");
 
-    // STEP 2: HUMAN READING PAUSE
+    // STEP 2: HUMAN INITIAL READING PAUSE
     await randomDelay(3000, 5000);
 
-    // STEP 3: HUMAN MOBILE SCROLLING
-    console.log("Simulating human mobile scrolling through quotes...");
+    // STEP 3: HUMAN MOBILE SCROLLING & TELEMETRY GENERATION
+    console.log("Simulating human scrolling telemetry...");
     const scrollCount = Math.floor(Math.random() * 3) + 2;
 
     for (let i = 1; i <= scrollCount; i++) {
-      const scrollDistance = Math.floor(Math.random() * 200) + 180;
+      const scrollDistance = Math.floor(Math.random() * 220) + 180;
       await page.evaluate((y) => window.scrollBy({ top: y, behavior: 'smooth' }), scrollDistance);
       await randomDelay(2000, 4000);
     }
 
-    // STEP 4: LOCATE BUTTON & TRIGGER REAL TOUCH EVENTS
-    console.log("Searching for Click-to-Call button or tel link...");
+    // STEP 4: HUMAN CURSOR TRAJECTORY & TOUCH TAP
+    console.log("Locating Click-to-Call target...");
     const callLocator = page.locator('a[href^="tel:"], button:has-text("Call"), a:has-text("Call"), .click-to-call, [class*="call"]').first();
 
     if (await callLocator.isVisible({ timeout: 15000 })) {
-      console.log("Call button located! Scrolling into view...");
       await callLocator.scrollIntoViewIfNeeded({ behavior: 'smooth' });
       await randomDelay(2000, 3500);
 
-      // Get exact coordinates of button for physical touch simulation
       const box = await callLocator.boundingBox();
 
       if (box) {
-        console.log(`Simulating real touch tap at coordinates X:${box.x + box.width / 2}, Y:${box.y + box.height / 2}`);
+        const targetX = box.x + box.width / 2;
+        const targetY = box.y + box.height / 2;
+
+        console.log(`Moving pointer with natural trajectory to X:${targetX}, Y:${targetY}`);
         
-        // Dispatch real DOM touch & click events so TrustedForm captures it
+        // Move pointer smoothly from top screen to button
+        await page.mouse.move(100, 100);
+        await page.mouse.move(targetX, targetY, { steps: 30 });
+        await randomDelay(800, 1500);
+
+        // Execute realistic touch + click event chain
         await page.evaluate((el) => {
-          const touch = new Touch({
+          const rect = el.getBoundingClientRect();
+          const x = rect.left + rect.width / 2;
+          const y = rect.top + rect.height / 2;
+
+          const touchObj = new Touch({
             identifier: Date.now(),
             target: el,
-            clientX: 100,
-            clientY: 100
+            clientX: x,
+            clientY: y,
+            radiusX: 2.5,
+            radiusY: 2.5,
+            rotationAngle: 0,
+            force: 0.5
           });
 
-          el.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], targetTouches: [touch], bubbles: true }));
-          el.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [], bubbles: true }));
+          el.dispatchEvent(new TouchEvent('touchstart', { touches: [touchObj], targetTouches: [touchObj], changedTouches: [touchObj], bubbles: true }));
+          el.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [], changedTouches: [touchObj], bubbles: true }));
           el.click();
         }, await callLocator.elementHandle());
 
-        console.log("Real touch & click events dispatched successfully!");
+        console.log("Human touch tap & click event dispatched!");
       } else {
         await callLocator.click();
       }
     } else {
-      console.log("Call button not found directly.");
+      console.log("Call target button not visible.");
     }
 
-    // STEP 5: WAIT FOR TRUSTEDFORM / GOOGLE SHEET WEBHOOK TO FIRE
-    console.log("Waiting 10 seconds for TrustedForm & Google Sheet Webhooks to send payload...");
-    await page.waitForTimeout(10000);
+    // STEP 5: WAIT FOR TRUSTEDFORM / SHEET WEBHOOK EXECUTION
+    console.log("Waiting 12 seconds to ensure TrustedForm payload delivery...");
+    await page.waitForTimeout(12000);
 
     const totalSeconds = Math.round((Date.now() - startTime) / 1000);
     console.log(`Workflow completed successfully in ${totalSeconds} seconds.`);
