@@ -12,15 +12,7 @@ const randomDelay = (min = 2000, max = 5000) => {
   return new Promise(resolve => setTimeout(resolve, ms));
 };
 
-const iosVersions = ['16_5', '16_6', '17_0', '17_2', '17_4_1', '17_5'];
-const iphoneModels = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 14 Pro', 'iPhone 15 Pro Max'];
-
 (async () => {
-  const randomModel = iphoneModels[Math.floor(Math.random() * iphoneModels.length)];
-  const randomVersion = iosVersions[Math.floor(Math.random() * iosVersions.length)];
-  const displayVersion = randomVersion.replace(/_/g, '.');
-  const customUA = `Mozilla/5.0 (${randomModel}; CPU iPhone OS ${randomVersion} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${displayVersion} Mobile/15E148 Safari/604.1`;
-
   const envServer = (process.env.PROXY_SERVER || '').trim().replace(/^["']|["']$/g, '');
   const envUser = (process.env.PROXY_USERNAME || '').trim().replace(/^["']|["']$/g, '');
   const envPass = (process.env.PROXY_PASSWORD || '').trim().replace(/^["']|["']$/g, '');
@@ -57,32 +49,24 @@ const iphoneModels = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 14 Pro', 'i
     };
   }
 
-  // Launch Chromium with headless: false under Xvfb (Bypasses headless detectors)
   const browser = await chromium.launch({ 
     headless: false,
     args: [
       '--disable-blink-features=AutomationControlled',
       '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-infobars',
-      '--window-size=390,844'
+      '--disable-setuid-sandbox'
     ],
     proxy: proxyConfig
   });
 
-  const deviceConfig = devices[randomModel.includes('iPhone 15') ? 'iPhone 14 Pro Max' : randomModel] || devices['iPhone 14'];
-
   const context = await browser.newContext({
-    ...deviceConfig,
-    userAgent: customUA,
+    ...devices['iPhone 14'],
     locale: 'en-US',
     timezoneId: 'America/New_York',
     hasTouch: true,
-    isMobile: true,
-    viewport: { width: 390, height: 844 }
+    isMobile: true
   });
 
-  // Stealth script: Overwrite automation indicators
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     window.chrome = { runtime: {} };
@@ -90,95 +74,53 @@ const iphoneModels = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 14 Pro', 'i
 
   const page = await context.newPage();
 
-  try {
-    console.log(`Profile Launch: ${randomModel} | iOS ${displayVersion}`);
-    console.log(`Targeting geo-location state: ${USER_STATE}`);
-    console.log(`Decodo Authenticated User String: ${finalUsername}`);
-    
-    const startTime = Date.now();
-    
-    // STEP 1: LOAD LANDING PAGE
-    console.log(`Navigating to landing page: ${TARGET_URL}`);
-    await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
-    
-    // Wait for TrustedForm script to fully initialize
-    await page.waitForTimeout(4000);
-    console.log("Page and TrustedForm scripts initialized.");
-
-    // STEP 2: HUMAN INITIAL READING PAUSE
-    await randomDelay(3000, 5000);
-
-    // STEP 3: HUMAN MOBILE SCROLLING & TELEMETRY GENERATION
-    console.log("Simulating human scrolling telemetry...");
-    const scrollCount = Math.floor(Math.random() * 3) + 2;
-
-    for (let i = 1; i <= scrollCount; i++) {
-      const scrollDistance = Math.floor(Math.random() * 220) + 180;
-      await page.evaluate((y) => window.scrollBy({ top: y, behavior: 'smooth' }), scrollDistance);
-      await randomDelay(2000, 4000);
+  // MONITOR OUTBOUND WEBHOOKS & TRACKING PAYLOADS
+  page.on('request', request => {
+    const url = request.url();
+    if (url.includes('google') || url.includes('script') || url.includes('trustedform') || url.includes('webhook') || url.includes('collect')) {
+      console.log(`[NETWORK OUTBOUND TRACKING]: ${request.method()} -> ${url.substring(0, 90)}...`);
     }
+  });
 
-    // STEP 4: HUMAN CURSOR TRAJECTORY & TOUCH TAP
-    console.log("Locating Click-to-Call target...");
-    const callLocator = page.locator('a[href^="tel:"], button:has-text("Call"), a:has-text("Call"), .click-to-call, [class*="call"]').first();
+  try {
+    console.log(`Navigating to target page: ${TARGET_URL}`);
+    await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
+    await page.waitForTimeout(5000);
 
-    if (await callLocator.isVisible({ timeout: 15000 })) {
-      await callLocator.scrollIntoViewIfNeeded({ behavior: 'smooth' });
-      await randomDelay(2000, 3500);
+    // SIMULATE HUMAN SCROLLING
+    console.log("Simulating mobile scroll & gesture telemetry...");
+    await page.evaluate(() => window.scrollBy({ top: 350, behavior: 'smooth' }));
+    await randomDelay(2000, 4000);
 
-      const box = await callLocator.boundingBox();
+    // SPECIFIC SELECTOR FOR TRACKED CALL CTA
+    const callButton = page.locator('.quote-card a[href^="tel:"], .main-content a[href^="tel:"], a[href^="tel:"]').last();
 
+    if (await callButton.isVisible({ timeout: 10000 })) {
+      await callButton.scrollIntoViewIfNeeded({ behavior: 'smooth' });
+      await randomDelay(1500, 3000);
+
+      const box = await callButton.boundingBox();
       if (box) {
-        const targetX = box.x + box.width / 2;
-        const targetY = box.y + box.height / 2;
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
 
-        console.log(`Moving pointer with natural trajectory to X:${targetX}, Y:${targetY}`);
+        console.log(`Executing NATIVE TOUCH TAP (isTrusted: true) at X:${x}, Y:${y}...`);
         
-        // Move pointer smoothly from top screen to button
-        await page.mouse.move(100, 100);
-        await page.mouse.move(targetX, targetY, { steps: 30 });
-        await randomDelay(800, 1500);
-
-        // Execute realistic touch + click event chain
-        await page.evaluate((el) => {
-          const rect = el.getBoundingClientRect();
-          const x = rect.left + rect.width / 2;
-          const y = rect.top + rect.height / 2;
-
-          const touchObj = new Touch({
-            identifier: Date.now(),
-            target: el,
-            clientX: x,
-            clientY: y,
-            radiusX: 2.5,
-            radiusY: 2.5,
-            rotationAngle: 0,
-            force: 0.5
-          });
-
-          el.dispatchEvent(new TouchEvent('touchstart', { touches: [touchObj], targetTouches: [touchObj], changedTouches: [touchObj], bubbles: true }));
-          el.dispatchEvent(new TouchEvent('touchend', { touches: [], targetTouches: [], changedTouches: [touchObj], bubbles: true }));
-          el.click();
-        }, await callLocator.elementHandle());
-
-        console.log("Human touch tap & click event dispatched!");
+        // Native Touchscreen API - Generates Genuine Hardware Touch Event
+        await page.touchscreen.tap(x, y);
+        console.log("Native physical touch tap dispatched!");
       } else {
-        await callLocator.click();
+        await callButton.click({ force: true });
       }
     } else {
-      console.log("Call target button not visible.");
+      console.log("Call CTA button not found!");
     }
 
-    // STEP 5: WAIT FOR TRUSTEDFORM / SHEET WEBHOOK EXECUTION
-    console.log("Waiting 12 seconds to ensure TrustedForm payload delivery...");
-    await page.waitForTimeout(12000);
-
-    const totalSeconds = Math.round((Date.now() - startTime) / 1000);
-    console.log(`Workflow completed successfully in ${totalSeconds} seconds.`);
+    console.log("Waiting 15 seconds to complete payload transmission...");
+    await page.waitForTimeout(15000);
 
   } catch (error) {
-    console.error("Critical Runtime Fault Captured:", error.message);
-    await page.screenshot({ path: 'error-screenshot.png', fullPage: true }).catch(() => {});
+    console.error("Execution Error:", error.message);
   } finally {
     await browser.close();
   }
