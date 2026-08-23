@@ -7,7 +7,7 @@ const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
 const DEFAULT_USERNAME = 'spjcjqkpfq';
 const DEFAULT_PASSWORD = 'fmd74wEhNbCr8=1gfE';
 
-const randomDelay = (min = 2000, max = 5000) => {
+const randomDelay = (min = 1000, max = 3000) => {
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, ms));
 };
@@ -74,49 +74,63 @@ const randomDelay = (min = 2000, max = 5000) => {
 
   const page = await context.newPage();
 
-  // MONITOR OUTBOUND WEBHOOKS & TRACKING PAYLOADS
-  page.on('request', request => {
-    const url = request.url();
-    if (url.includes('google') || url.includes('script') || url.includes('trustedform') || url.includes('webhook') || url.includes('collect')) {
-      console.log(`[NETWORK OUTBOUND TRACKING]: ${request.method()} -> ${url.substring(0, 90)}...`);
+  // MONITOR GOOGLE SHEET / WEBHOOK OUTBOUND RESPONSES
+  page.on('response', response => {
+    const url = response.url();
+    if (url.includes('script.google.com') || url.includes('trustedform') || url.includes('webhook') || url.includes('docs.google.com')) {
+      console.log(`[TRACKING WEBHOOK CONFIRMED]: Status ${response.status()} -> ${url}`);
     }
   });
 
   try {
-    console.log(`Navigating to target page: ${TARGET_URL}`);
-    await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
+    console.log(`Navigating to target landing page: ${TARGET_URL}`);
+    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(5000);
 
-    // SIMULATE HUMAN SCROLLING
-    console.log("Simulating mobile scroll & gesture telemetry...");
-    await page.evaluate(() => window.scrollBy({ top: 350, behavior: 'smooth' }));
+    // PREVENT `tel:` PROTOCOL FROM CANCELING JS EXECUTION
+    await page.evaluate(() => {
+      document.querySelectorAll('a[href^="tel:"]').forEach(a => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault(); // Stop Linux OS call handler interruption
+        }, true);
+      });
+    });
+
+    // HUMAN SCROLL TELEMETRY
+    console.log("Simulating mobile scroll telemetry...");
+    await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
     await randomDelay(2000, 4000);
 
-    // SPECIFIC SELECTOR FOR TRACKED CALL CTA
-    const callButton = page.locator('.quote-card a[href^="tel:"], .main-content a[href^="tel:"], a[href^="tel:"]').last();
+    // LOCATE BUTTON
+    const callButton = page.locator('a[href^="tel:"], button:has-text("Call"), a:has-text("Call")').first();
 
     if (await callButton.isVisible({ timeout: 10000 })) {
       await callButton.scrollIntoViewIfNeeded({ behavior: 'smooth' });
-      await randomDelay(1500, 3000);
+      await randomDelay(1000, 2500);
 
-      const box = await callButton.boundingBox();
-      if (box) {
-        const x = box.x + box.width / 2;
-        const y = box.y + box.height / 2;
+      console.log("Dispatching click and forcing dataLayer event...");
 
-        console.log(`Executing NATIVE TOUCH TAP (isTrusted: true) at X:${x}, Y:${y}...`);
-        
-        // Native Touchscreen API - Generates Genuine Hardware Touch Event
-        await page.touchscreen.tap(x, y);
-        console.log("Native physical touch tap dispatched!");
-      } else {
-        await callButton.click({ force: true });
-      }
+      // Execute click + GTM event fallback
+      await Promise.all([
+        callButton.click({ force: true }),
+        page.evaluate(() => {
+          if (window.dataLayer) {
+            window.dataLayer.push({
+              'event': 'click_to_call',
+              'eventCategory': 'CTA',
+              'eventAction': 'Click',
+              'eventLabel': 'Click-to-Call'
+            });
+          }
+        })
+      ]);
+
+      console.log("Click dispatched successfully!");
     } else {
-      console.log("Call CTA button not found!");
+      console.log("Call CTA button not found on page.");
     }
 
-    console.log("Waiting 15 seconds to complete payload transmission...");
+    console.log("Waiting 15 seconds for Google Apps Script execution...");
     await page.waitForTimeout(15000);
 
   } catch (error) {
