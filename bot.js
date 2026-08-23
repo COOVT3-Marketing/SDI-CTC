@@ -70,23 +70,41 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   try {
     console.log(`1. Navigating to landing page: ${TARGET_URL}`);
-    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await delay(3000);
+    await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
+    
+    // Initial human wait time
+    await delay(2000);
 
-    console.log("2. Simulating Scroll and Waiting for Certificates...");
-    await page.evaluate(() => window.scrollBy({ top: 300, behavior: 'smooth' }));
+    console.log("2. Simulating realistic user behavior (Touch & Smooth Scroll)...");
+    
+    // Simulate Touch Movement (TrustedForm tracks event listeners)
+    await page.touchscreen.tap(200, 300);
+    await delay(1000);
 
+    // Scroll down gradually to trigger TrustedForm time-on-page tracking
+    for (let i = 0; i < 5; i++) {
+      await page.evaluate(() => window.scrollBy({ top: 150, behavior: 'smooth' }));
+      await delay(1500);
+    }
+
+    // Scroll slightly up again to mimic human viewing
+    await page.evaluate(() => window.scrollBy({ top: -100, behavior: 'smooth' }));
+    await delay(2000);
+
+    console.log("3. Waiting for Certificates to load...");
     await page.waitForFunction(() => {
       const tf = document.getElementById('xxTrustedFormCertUrl')?.value || document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value;
       const jn = document.getElementById('leadid_token')?.value || document.querySelector('input[name="jornaya_leadid"]')?.value;
       return Boolean(tf || jn);
     }, { timeout: 15000 }).catch(() => console.log("⚠️ Token load timeout. Proceeding with current DOM state..."));
 
-    console.log("3. Extracting IP, Tokens & Triggering Webhook Payload...");
+    // Ensure total on-page time is ~10-12 seconds before sending webhook
+    await delay(2000);
+
+    console.log("4. Extracting IP, Tokens & Triggering Webhook Payload...");
 
     const payloadResult = await page.evaluate(async (webhookUrl) => {
       try {
-        // Fetch Public IP Address
         let publicIp = "";
         try {
           const ipRes = await fetch('https://api.ipify.org?format=json');
@@ -96,15 +114,12 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
           console.log("Failed to fetch IP:", ipErr);
         }
 
-        // Extract TrustedForm Full Cert URL
         const certUrl = document.getElementById('xxTrustedFormCertUrl')?.value || 
                         document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || "";
 
-        // Extract Ping URL
         const pingUrl = document.getElementById('xxTrustedFormPingUrl_0')?.value || 
                         document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
 
-        // Extract ONLY clean 40-character token ID
         let rawToken = document.getElementById('xxTrustedFormToken_0')?.value || "";
         if (!rawToken && certUrl) {
           const match = certUrl.match(/([a-f0-9]{40})/i);
@@ -114,19 +129,17 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
           rawToken = parts[parts.length - 1];
         }
 
-        // Extract Jornaya Lead ID
         const jornayaId = document.getElementById('leadid_token')?.value || 
                           document.querySelector('input[name="jornaya_leadid"]')?.value || "";
 
-        // Payload Key Names standardizing with Google Apps Script expectance
         const payload = {
           submissionType: "CLICK_TO_CALL",
           ipAddress: publicIp,
           pageUrl: window.location.href,
-          xxTrustedFormUrl: certUrl,         // Matches data.xxTrustedFormUrl in Apps Script
-          xxTrustedFormToken: rawToken,       // Clean ID for data.xxTrustedFormToken
-          xxTrustedFormPingUrl: pingUrl,     // Matches data.xxTrustedFormPingUrl
-          jornayaLeadId: jornayaId,          // Matches data.jornayaLeadId
+          xxTrustedFormUrl: certUrl,
+          xxTrustedFormToken: rawToken,
+          xxTrustedFormPingUrl: pingUrl,
+          jornayaLeadId: jornayaId,
           timestamp: new Date().toISOString()
         };
 
@@ -149,7 +162,8 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
       console.log("❌ [WEBHOOK FAILED]:", payloadResult.error);
     }
 
-    await delay(3000);
+    // Keep page open for 2 extra seconds after sending payload to let TrustedForm sync
+    await delay(2000);
 
   } catch (error) {
     console.error("Execution Error:", error.message);
