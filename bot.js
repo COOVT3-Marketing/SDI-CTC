@@ -95,7 +95,7 @@ const getRandomMobileProfile = () => {
 
   const page = await context.newPage();
 
-  // Monitor for Google Sheet Webhook Execution
+  // Monitor Network for Google Sheet Webhook execution
   page.on('response', response => {
     const url = response.url();
     if (url.includes('script.google.com') || url.includes('exec')) {
@@ -108,7 +108,7 @@ const getRandomMobileProfile = () => {
     await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await delay(3000);
 
-    // Prevent 'tel:' link from opening system dialer popup
+    // Prevent 'tel:' links from triggering system dialer popups
     await page.evaluate(() => {
       window.addEventListener('click', (e) => {
         const link = e.target.closest('a[href^="tel:"]');
@@ -121,7 +121,7 @@ const getRandomMobileProfile = () => {
 
     console.log("2. Simulating Human Research Behavior (Scrolling & Pausing)...");
     
-    // Smooth Scroll Down (Node scope values passed explicitly)
+    // Smooth Scroll Down
     const scrollAmount1 = getRandomInt(200, 400);
     await page.evaluate((amt) => window.scrollBy({ top: amt, behavior: 'smooth' }), scrollAmount1);
     await delay(getRandomInt(2000, 3000));
@@ -160,32 +160,37 @@ const getRandomMobileProfile = () => {
 
       await delay(3000);
 
-      // FORCE TRIGGER CLICK_TO_CALL TO GOOGLE SHEET WEBHOOK IF DOM LISTENER SKIPPED
-      console.log("5. Triggering Click-To-Call Webhook Event with TrustedForm Certificate...");
+      console.log("5. Extracting TrustedForm & Executing Form Listener Payload...");
       await page.evaluate(async (pageUrl) => {
-        const certUrl = document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || 
-                        window.xxTrustedFormCertUrl || "";
-        const pingUrl = document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
+        const rawCertUrl = document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || 
+                          window.xxTrustedFormCertUrl || "";
+        const certUrlStr = String(rawCertUrl || "");
+        
+        const rawPingUrl = document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
+        const pingUrlStr = String(rawPingUrl || "");
         
         let token = "";
-        if (certUrl) {
-          const parts = certUrl.split('/');
+        if (certUrlStr && certUrlStr.includes('/')) {
+          const parts = certUrlStr.split('/');
           token = parts[parts.length - 1] || "";
         }
 
-        const jornayaId = document.querySelector('input[name="universal_leadid"]')?.value || "";
+        const rawJornaya = document.querySelector('input[name="universal_leadid"]')?.value || "";
+        const jornayaIdStr = String(rawJornaya || "");
+
+        console.log(`Extracted TrustedForm Token: ${token}`);
 
         const payload = {
           submissionType: "CLICK_TO_CALL",
           ipAddress: "",
           pageUrl: pageUrl,
-          xxTrustedFormUrl: certUrl,
+          xxTrustedFormUrl: certUrlStr,
           xxTrustedFormToken: token,
-          xxTrustedFormPingUrl: pingUrl,
-          jornayaLeadId: jornayaId
+          xxTrustedFormPingUrl: pingUrlStr,
+          jornayaLeadId: jornayaIdStr
         };
 
-        // If page has a global submit function or form action to google script
+        // Fire directly to any Google Sheet forms/scripts attached in DOM
         const forms = document.querySelectorAll('form');
         forms.forEach(f => {
           if (f.action && f.action.includes('script.google.com')) {
@@ -199,8 +204,8 @@ const getRandomMobileProfile = () => {
         });
       }, TARGET_URL);
 
-      console.log("Waiting 15 seconds for Google Apps Script to write to Sheet...");
-      await delay(15000);
+      console.log("Waiting 12 seconds for background processes and Apps Script response...");
+      await delay(12000);
 
     } else {
       console.log("❌ Call CTA button not found on page.");
