@@ -86,11 +86,28 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
       await delay(stepPause);
     }
 
-    console.log("3. Scrolling back up to the Click-to-Call section...");
+    console.log("3. Scrolling back up to the Click-to-Call card section...");
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
-    await delay(3000);
+    await delay(2000);
 
-    console.log("4. Simulating click on Click-to-Call button/card...");
+    // Wait for TrustedForm / Jornaya tokens to fully load
+    await page.waitForFunction(() => {
+      const tf = document.getElementById('xxTrustedFormCertUrl')?.value || document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value;
+      const jn = document.getElementById('leadid_token')?.value || document.querySelector('input[name="jornaya_leadid"]')?.value;
+      return Boolean(tf || jn);
+    }, { timeout: 15000 }).catch(() => console.log("⚠️ Token load timeout. Proceeding with current DOM state..."));
+
+    // Guarantee full 35 to 40 seconds time on page BEFORE the final click
+    const targetSessionTime = getRandomInt(36000, 40000);
+    const elapsedSoFar = Date.now() - startTime;
+    const remainingDelay = targetSessionTime - elapsedSoFar;
+
+    if (remainingDelay > 0) {
+      console.log(`⏱️ Maintaining reading session... Waiting ${(remainingDelay / 1000).toFixed(1)}s to reach ${targetSessionTime / 1000}s total session time.`);
+      await delay(remainingDelay);
+    }
+
+    console.log("4. Final Action: Clicking the Click-to-Call button/card at the end of session...");
     const callBtn = page.locator('a[href^="tel:"], button:has-text("Call"), a:has-text("Call"), .click-to-call').first();
     if (await callBtn.count() > 0) {
       await callBtn.click({ force: true }).catch(() => {});
@@ -98,22 +115,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
       await page.mouse.click(196, 400).catch(() => {});
     }
 
-    // Wait for TrustedForm / Jornaya tokens to fully generate
-    await page.waitForFunction(() => {
-      const tf = document.getElementById('xxTrustedFormCertUrl')?.value || document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value;
-      const jn = document.getElementById('leadid_token')?.value || document.querySelector('input[name="jornaya_leadid"]')?.value;
-      return Boolean(tf || jn);
-    }, { timeout: 15000 }).catch(() => console.log("⚠️ Token load timeout. Proceeding with current DOM state..."));
-
-    // Guarantee full 35 to 40 seconds time on page BEFORE triggering webhook
-    const targetSessionTime = getRandomInt(36000, 40000);
-    const elapsedSoFar = Date.now() - startTime;
-    const remainingDelay = targetSessionTime - elapsedSoFar;
-
-    if (remainingDelay > 0) {
-      console.log(`⏱️ Holding session active... Waiting ${(remainingDelay / 1000).toFixed(1)}s to reach ${targetSessionTime / 1000}s total page time.`);
-      await delay(remainingDelay);
-    }
+    await delay(1500); // Short pause to register click event on TrustedForm DOM tracker
 
     console.log("5. Extracting IP, Tokens & Triggering Webhook Payload...");
 
@@ -176,7 +178,6 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
       console.log("❌ [WEBHOOK FAILED]:", payloadResult.error);
     }
 
-    // Cooldown pause to allow TrustedForm server to sync full session replay logs
     await delay(3000);
 
   } catch (error) {
