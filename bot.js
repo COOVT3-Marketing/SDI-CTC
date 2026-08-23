@@ -1,8 +1,10 @@
 const { chromium } = require('playwright');
 
 const USER_STATE = process.env.USER_STATE || 'California';
-// Removed trailing slash to prevent 404 routing errors
 const TARGET_URL = (process.env.LANDING_PAGE_URL || 'https://securedrive-insurance.com/quotes').replace(/\/$/, "");
+
+// ⚠️ YAHAN APNA GOOGLE APPS SCRIPT WEB APP URL PUT KAREIN
+const GOOGLE_WEBHOOK_URL = process.env.GOOGLE_WEBHOOK_URL || 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL';
 
 const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
 const DEFAULT_USERNAME = 'spjcjqkpfq';
@@ -66,46 +68,73 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     timezoneId: 'America/New_York'
   });
 
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    window.chrome = { runtime: {} };
-  });
-
   const page = await context.newPage();
 
   try {
-    console.log(`1. Navigating to: ${TARGET_URL}`);
-    const response = await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    
-    // Check if proxy returned 404/500 page
-    if (response && response.status() >= 400) {
-      console.log(`⚠️ Proxy response status ${response.status()}. Retrying direct target URL...`);
-      await page.goto('https://securedrive-insurance.com/quotes', { waitUntil: 'networkidle' });
+    console.log(`1. Navigating to landing page: ${TARGET_URL}`);
+    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await delay(3000);
+
+    console.log("2. Simulating Scroll and Waiting for Certificates (TrustedForm/Jornaya)...");
+    await page.evaluate(() => window.scrollBy({ top: 300, behavior: 'smooth' }));
+
+    // Wait until TF Cert or Jornaya Token populates into the DOM
+    await page.waitForFunction(() => {
+      const tf = document.getElementById('xxTrustedFormCertUrl')?.value || document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value;
+      const jn = document.getElementById('leadid_token')?.value || document.querySelector('input[name="jornaya_leadid"]')?.value;
+      return Boolean(tf || jn);
+    }, { timeout: 15000 }).catch(() => console.log("⚠️ Token load timeout. Proceeding with current DOM state..."));
+
+    console.log("3. Extracting Tokens & Triggering Webhook Payload...");
+
+    const payloadResult = await page.evaluate(async (webhookUrl) => {
+      try {
+        const certUrl = document.getElementById('xxTrustedFormCertUrl')?.value || 
+                        document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || "";
+
+        const pingUrl = document.getElementById('xxTrustedFormPingUrl_0')?.value || 
+                        document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
+
+        let rawToken = document.getElementById('xxTrustedFormToken_0')?.value || "";
+        if (!rawToken && certUrl.includes('/')) {
+          const parts = certUrl.split('/');
+          rawToken = parts[parts.length - 1] || "";
+        }
+
+        const jornayaId = document.getElementById('leadid_token')?.value || 
+                          document.querySelector('input[name="jornaya_leadid"]')?.value || "";
+
+        const payload = {
+          submissionType: "CLICK_TO_CALL",
+          pageUrl: window.location.href,
+          xxTrustedFormCertUrl: certUrl,
+          xxTrustedFormToken: rawToken,
+          xxTrustedFormPingUrl: pingUrl,
+          jornayaLeadId: jornayaId,
+          timestamp: new Date().toISOString()
+        };
+
+        // Send to Apps Script Webhook
+        const res = await fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        return { success: true, payload };
+      } catch (err) {
+        return { success: false, error: err.toString() };
+      }
+    }, GOOGLE_WEBHOOK_URL);
+
+    if (payloadResult.success) {
+      console.log("🎯 [WEBHOOK SENT SUCCESSFULLY]:", JSON.stringify(payloadResult.payload));
+    } else {
+      console.log("❌ [WEBHOOK FAILED]:", payloadResult.error);
     }
 
     await delay(3000);
-
-    // Verify if 404 text is on screen
-    const is404 = await page.evaluate(() => document.body.innerText.includes('This page was not found'));
-    if (is404) {
-      console.log("⚠️ 404 Proxy Gateway error detected! Reloading page...");
-      await page.reload({ waitUntil: 'networkidle' });
-      await delay(2000);
-    }
-
-    console.log("2. Page successfully loaded! Proceeding with interactions...");
-    await page.evaluate(() => window.scrollBy({ top: 300, behavior: 'smooth' }));
-    await delay(2000);
-
-    const callButton = page.locator('#callNowBtn, a[href^="tel:"]').first();
-    if (await callButton.isVisible({ timeout: 10000 })) {
-      console.log("3. Target CTA Button Found. Executing Click...");
-      await callButton.click();
-      console.log("✅ Click executed successfully!");
-      await delay(5000);
-    } else {
-      console.log("❌ Call CTA button not visible on page.");
-    }
 
   } catch (error) {
     console.error("Execution Error:", error.message);
