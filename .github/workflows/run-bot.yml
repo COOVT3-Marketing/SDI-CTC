@@ -29,11 +29,13 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Execute Click-to-Call Bot
+      - name: Execute Click-to-Call Bot with Virtual Display
+        uses: GabrielBB/xvfb-action@v1
+        with:
+          run: npm start
         env:
           PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
           USER_STATE: ${{ github.event.inputs.user_state || 'California' }}
           LANDING_PAGE_URL: 'https://securedrive-insurance.com/quotes/'
-        run: npm start
