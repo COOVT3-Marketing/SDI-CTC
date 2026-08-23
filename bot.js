@@ -1,10 +1,8 @@
 const { chromium } = require('playwright');
 
 const USER_STATE = process.env.USER_STATE || 'California';
-const TARGET_URL = process.env.LANDING_PAGE_URL || 'https://securedrive-insurance.com/quotes/';
-
-// YAHAN APNA GOOGLE APPS SCRIPT WEB APP URL DAALEN
-const GOOGLE_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxkjTB8kbypn64nssb-Of8OpcXQ08mrvr7FWWLxc7q5rF0mMVk5_9xBiFi4pR5rJW8Tpw/exec';
+// Removed trailing slash to prevent 404 routing errors
+const TARGET_URL = (process.env.LANDING_PAGE_URL || 'https://securedrive-insurance.com/quotes').replace(/\/$/, "");
 
 const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
 const DEFAULT_USERNAME = 'spjcjqkpfq';
@@ -14,82 +12,100 @@ const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) +
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 (async () => {
+  const envServer = (process.env.PROXY_SERVER || '').trim().replace(/^["']|["']$/g, '');
+  const envUser = (process.env.PROXY_USERNAME || '').trim().replace(/^["']|["']$/g, '');
+  const envPass = (process.env.PROXY_PASSWORD || '').trim().replace(/^["']|["']$/g, '');
+
+  const baseServer = envServer.length > 5 ? envServer : DEFAULT_SERVER;
+  const baseUsername = envUser.length > 0 ? envUser : DEFAULT_USERNAME;
+  const basePassword = envPass.length > 0 ? envPass : DEFAULT_PASSWORD;
+
+  let finalUsername = baseUsername;
+  if (USER_STATE) {
+    const formattedState = USER_STATE.toLowerCase().trim().replace(/\s+/g, '_');
+    const randomSession = getRandomInt(100000, 999999);
+    finalUsername = `user-${baseUsername}-country-us-state-us_${formattedState}-session-${randomSession}`;
+  }
+
+  let serverUrl = baseServer;
+  if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://') && !serverUrl.startsWith('socks5://')) {
+    serverUrl = `http://${serverUrl}`;
+  }
+
+  let proxyConfig;
+  try {
+    const parsed = new URL(serverUrl);
+    proxyConfig = {
+      server: `${parsed.protocol}//${parsed.host}`,
+      username: finalUsername,
+      password: basePassword
+    };
+  } catch (urlErr) {
+    proxyConfig = {
+      server: DEFAULT_SERVER,
+      username: finalUsername,
+      password: DEFAULT_PASSWORD
+    };
+  }
+
+  console.log(`[PROXY CONFIG]: Routing through ${proxyConfig.server} | Session: ${finalUsername}`);
+
   const browser = await chromium.launch({ 
     headless: false,
-    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox']
+    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-setuid-sandbox'],
+    proxy: proxyConfig
   });
 
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
     viewport: { width: 393, height: 852 },
+    deviceScaleFactor: 3,
     isMobile: true,
-    hasTouch: true
+    hasTouch: true,
+    locale: 'en-US',
+    timezoneId: 'America/New_York'
+  });
+
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    window.chrome = { runtime: {} };
   });
 
   const page = await context.newPage();
 
   try {
     console.log(`1. Navigating to: ${TARGET_URL}`);
-    await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
+    const response = await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    
+    // Check if proxy returned 404/500 page
+    if (response && response.status() >= 400) {
+      console.log(`⚠️ Proxy response status ${response.status()}. Retrying direct target URL...`);
+      await page.goto('https://securedrive-insurance.com/quotes', { waitUntil: 'networkidle' });
+    }
+
     await delay(3000);
 
-    // Human Scroll
+    // Verify if 404 text is on screen
+    const is404 = await page.evaluate(() => document.body.innerText.includes('This page was not found'));
+    if (is404) {
+      console.log("⚠️ 404 Proxy Gateway error detected! Reloading page...");
+      await page.reload({ waitUntil: 'networkidle' });
+      await delay(2000);
+    }
+
+    console.log("2. Page successfully loaded! Proceeding with interactions...");
     await page.evaluate(() => window.scrollBy({ top: 300, behavior: 'smooth' }));
     await delay(2000);
 
-    console.log("2. Waiting for TrustedForm & Jornaya Tokens...");
-    await page.waitForFunction(() => {
-      const tfCert = document.getElementById('xxTrustedFormCertUrl')?.value || document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value;
-      const jToken = document.getElementById('leadid_token')?.value || document.querySelector('input[name="jornaya_leadid"]')?.value;
-      return Boolean(tfCert || jToken);
-    }, { timeout: 15000 }).catch(() => console.log("⚠️ Token loading timed out. Extracting whatever is available..."));
-
-    console.log("3. Extracting Tokens & Triggering Webhook directly via Bot...");
-    
-    // Direct Webhook Trigger via Bot Page Context
-    const success = await page.evaluate(async (webhookUrl) => {
-      try {
-        const certUrl = document.getElementById('xxTrustedFormCertUrl')?.value || 
-                        document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || "";
-                        
-        const pingUrl = document.getElementById('xxTrustedFormPingUrl_0')?.value || 
-                        document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
-
-        let rawToken = document.getElementById('xxTrustedFormToken_0')?.value || "";
-        if (!rawToken && certUrl.includes('/')) {
-          const parts = certUrl.split('/');
-          rawToken = parts[parts.length - 1] || "";
-        }
-
-        const jornayaId = document.getElementById('leadid_token')?.value || 
-                          document.querySelector('input[name="jornaya_leadid"]')?.value || "";
-
-        const payload = {
-          submissionType: "CLICK_TO_CALL",
-          ipAddress: "",
-          pageUrl: window.location.href,
-          xxTrustedFormCertUrl: certUrl,
-          xxTrustedFormToken: rawToken,
-          xxTrustedFormPingUrl: pingUrl,
-          jornayaLeadId: jornayaId
-        };
-
-        // Send directly to Google Apps Script
-        await fetch(webhookUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload)
-        });
-
-        return true;
-      } catch (err) {
-        return false;
-      }
-    }, GOOGLE_WEBHOOK_URL);
-
-    console.log(success ? "✅ Webhook successfully sent to Google Sheet!" : "❌ Failed to send webhook.");
-    await delay(5000);
+    const callButton = page.locator('#callNowBtn, a[href^="tel:"]').first();
+    if (await callButton.isVisible({ timeout: 10000 })) {
+      console.log("3. Target CTA Button Found. Executing Click...");
+      await callButton.click();
+      console.log("✅ Click executed successfully!");
+      await delay(5000);
+    } else {
+      console.log("❌ Call CTA button not visible on page.");
+    }
 
   } catch (error) {
     console.error("Execution Error:", error.message);
