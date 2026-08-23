@@ -1,4 +1,4 @@
-const { chromium, devices } = require('playwright');
+const { chromium } = require('playwright');
 
 const USER_STATE = process.env.USER_STATE || 'California';
 const TARGET_URL = process.env.LANDING_PAGE_URL || 'https://securedrive-insurance.com/quotes/';
@@ -7,9 +7,30 @@ const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
 const DEFAULT_USERNAME = 'spjcjqkpfq';
 const DEFAULT_PASSWORD = 'fmd74wEhNbCr8=1gfE';
 
-const randomDelay = (min = 1000, max = 3000) => {
-  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
-  return new Promise(resolve => setTimeout(resolve, ms));
+const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Random Mobile Profiles Generator
+const getRandomMobileProfile = () => {
+  const mobileDevices = [
+    {
+      name: 'iPhone 14 Pro',
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+      viewport: { width: 393, height: 852 },
+      deviceScaleFactor: 3,
+      isMobile: true,
+      hasTouch: true
+    },
+    {
+      name: 'Samsung Galaxy S22',
+      userAgent: 'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36',
+      viewport: { width: 360, height: 780 },
+      deviceScaleFactor: 3,
+      isMobile: true,
+      hasTouch: true
+    }
+  ];
+  return mobileDevices[getRandomInt(0, mobileDevices.length - 1)];
 };
 
 (async () => {
@@ -24,7 +45,7 @@ const randomDelay = (min = 1000, max = 3000) => {
   let finalUsername = baseUsername;
   if (USER_STATE) {
     const formattedState = USER_STATE.toLowerCase().trim().replace(/\s+/g, '_');
-    const randomSession = Math.floor(10000 + Math.random() * 90000);
+    const randomSession = getRandomInt(100000, 999999);
     finalUsername = `user-${baseUsername}-country-us-state-us_${formattedState}-session-${randomSession}`;
   }
 
@@ -51,20 +72,21 @@ const randomDelay = (min = 1000, max = 3000) => {
 
   const browser = await chromium.launch({ 
     headless: false,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--no-sandbox',
-      '--disable-setuid-sandbox'
-    ],
+    args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-setuid-sandbox'],
     proxy: proxyConfig
   });
 
+  const mobileProfile = getRandomMobileProfile();
+  console.log(`[PROFILE LOADED]: ${mobileProfile.name}`);
+
   const context = await browser.newContext({
-    ...devices['iPhone 14'],
-    locale: 'en-US',
-    timezoneId: 'America/New_York',
+    userAgent: mobileProfile.userAgent,
+    viewport: mobileProfile.viewport,
+    deviceScaleFactor: mobileProfile.deviceScaleFactor,
+    isMobile: true,
     hasTouch: true,
-    isMobile: true
+    locale: 'en-US',
+    timezoneId: 'America/New_York'
   });
 
   await context.addInitScript(() => {
@@ -74,121 +96,77 @@ const randomDelay = (min = 1000, max = 3000) => {
 
   const page = await context.newPage();
 
-  let detectedWebhookUrl = null;
-
-  // Intercept Google Webhook URL dynamically if present
-  page.on('request', request => {
-    const url = request.url();
-    if (url.includes('script.google.com') || url.includes('exec')) {
-      detectedWebhookUrl = url;
-      console.log(`[FOUND GOOGLE SHEET WEBHOOK URL]: ${url}`);
-    }
-  });
-
+  // Monitor Network Responses for Google Apps Script Webhook
   page.on('response', response => {
     const url = response.url();
     if (url.includes('script.google.com') || url.includes('exec')) {
-      console.log(`[GOOGLE SHEET RESPONSE]: Status ${response.status()}`);
+      console.log(`🎯 [GOOGLE SHEET WEBHOOK SUCCESS]: Status ${response.status()} -> ${url}`);
     }
   });
 
   try {
-    console.log(`Navigating to target page: ${TARGET_URL}`);
-    await page.goto(TARGET_URL, { waitUntil: 'networkidle', timeout: 60000 });
-    await page.waitForTimeout(5000);
+    console.log(`1. Navigating to landing page: ${TARGET_URL}`);
+    await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await delay(getRandomInt(3000, 5000));
 
-    // Prevent call dialer popup from freezing JS execution
+    // Prevent 'tel:' link from opening system dialer popup
     await page.evaluate(() => {
-      document.querySelectorAll('a[href^="tel:"]').forEach(a => {
-        a.addEventListener('click', (e) => e.preventDefault(), true);
-      });
+      window.addEventListener('click', (e) => {
+        const link = e.target.closest('a[href^="tel:"]');
+        if (link) {
+          e.preventDefault();
+          console.log("Captured tel link click natively without breaking JS execution.");
+        }
+      }, true);
     });
 
-    console.log("Simulating mobile scroll telemetry...");
-    await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
-    await randomDelay(2000, 3000);
+    // HUMAN BEHAVIOR SIMULATION (Research & Reading Phase)
+    console.log("2. Simulating Human Research Behavior (Scrolling & Pausing)...");
+    
+    // Scroll Down 1
+    await page.evaluate(() => window.scrollBy({ top: getRandomInt(200, 400), behavior: 'smooth' }));
+    await delay(getRandomInt(2000, 4000)); // Reading time
 
-    // Physical Hardware Touch Tap
+    // Touch gesture on content
+    await page.touchscreen.tap(getRandomInt(100, 250), getRandomInt(200, 400));
+    await delay(getRandomInt(1500, 3000));
+
+    // Scroll Down 2
+    await page.evaluate(() => window.scrollBy({ top: getRandomInt(300, 500), behavior: 'smooth' }));
+    await delay(getRandomInt(3000, 5000)); // Reading time
+
+    // Scroll slightly up (human re-reading)
+    await page.evaluate(() => window.scrollBy({ top: -150, behavior: 'smooth' }));
+    await delay(getRandomInt(2000, 3000));
+
+    // LOCATE CLICK-TO-CALL BUTTON
+    console.log("3. Locating Call CTA Button...");
     const callButton = page.locator('a[href^="tel:"], button:has-text("Call"), a:has-text("Call")').first();
 
     if (await callButton.isVisible({ timeout: 10000 })) {
       await callButton.scrollIntoViewIfNeeded({ behavior: 'smooth' });
-      await randomDelay(1000, 2000);
+      await delay(getRandomInt(1500, 3000));
 
       const box = await callButton.boundingBox();
       if (box) {
-        console.log("Executing physical touch tap...");
-        await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+        console.log("4. Executing Native Human Touch Tap on Call Button...");
+        const tapX = box.x + box.width / 2 + getRandomInt(-5, 5);
+        const tapY = box.y + box.height / 2 + getRandomInt(-3, 3);
+        
+        // Dispatch real physical touch event
+        await page.touchscreen.tap(tapX, tapY);
+        console.log("Tap Event Dispatched Successfully!");
       } else {
-        await callButton.click({ force: true });
+        await callButton.click();
       }
+
+      // Allow site's internal JavaScript to trigger Google Sheet Webhook / AJAX
+      console.log("5. Waiting for page scripts to process TrustedForm & send payload to Google Sheet...");
+      await delay(12000);
+
+    } else {
+      console.log("❌ Call CTA button not found on page.");
     }
-
-    await page.waitForTimeout(3000);
-
-    // Extract TrustedForm details from DOM and trigger submissionType: CLICK_TO_CALL
-    console.log("Extracting payload & sending CLICK_TO_CALL payload to Google Apps Script...");
-    
-    const submissionResult = await page.evaluate(async (pageUrl) => {
-      // Find TrustedForm values
-      const certUrl = document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || 
-                      window.xxTrustedFormCertUrl || "";
-      const pingUrl = document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
-      
-      let token = "";
-      if (certUrl) {
-        const parts = certUrl.split('/');
-        token = parts[parts.length - 1] || "";
-      }
-
-      const jornayaId = document.querySelector('input[name="universal_leadid"]')?.value || "";
-
-      // Payload strictly matching Apps Script structure
-      const payload = {
-        submissionType: "CLICK_TO_CALL",
-        ipAddress: "", 
-        pageUrl: pageUrl,
-        xxTrustedFormUrl: certUrl,
-        xxTrustedFormToken: token,
-        xxTrustedFormPingUrl: pingUrl,
-        jornayaLeadId: jornayaId
-      };
-
-      // Dispatch via window.fetch if Google Webhook endpoint is defined in scripts/forms
-      const forms = document.querySelectorAll('form');
-      let targetEndpoint = "";
-
-      forms.forEach(f => {
-        if (f.action && f.action.includes('script.google.com')) {
-          targetEndpoint = f.action;
-        }
-      });
-
-      if (!targetEndpoint && window.googleSheetWebhookUrl) {
-        targetEndpoint = window.googleSheetWebhookUrl;
-      }
-
-      if (targetEndpoint) {
-        try {
-          await fetch(targetEndpoint, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          return { success: true, endpoint: targetEndpoint };
-        } catch (e) {
-          return { success: false, error: e.message };
-        }
-      }
-
-      return { success: false, reason: "No direct form endpoint found in client DOM, relying on page click events." };
-    }, TARGET_URL);
-
-    console.log("Payload Dispatch Result:", JSON.stringify(submissionResult));
-
-    console.log("Waiting 15 seconds to ensure Apps Script writes to 'Quotes Click-to-Call' tab...");
-    await page.waitForTimeout(15000);
 
   } catch (error) {
     console.error("Execution Error:", error.message);
