@@ -4,7 +4,7 @@ const USER_STATE = process.env.USER_STATE || 'California';
 const TARGET_URL = (process.env.LANDING_PAGE_URL || 'https://securedrive-insurance.com/quotes').replace(/\/$/, "");
 
 // ⚠️ YAHAN APNA GOOGLE APPS SCRIPT WEB APP URL PUT KAREIN
-const GOOGLE_WEBHOOK_URL = process.env.GOOGLE_WEBHOOK_URL || 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL';
+const GOOGLE_WEBHOOK_URL = process.env.GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbxkjTB8kbypn64nssb-Of8OpcXQ08mrvr7FWWLxc7q5rF0mMVk5_9xBiFi4pR5rJW8Tpw/exec';
 
 const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
 const DEFAULT_USERNAME = 'spjcjqkpfq';
