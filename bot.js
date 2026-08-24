@@ -150,6 +150,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
         const payload = {
           submissionType: "CLICK_TO_CALL",
+          phone: process.env.USER_PHONE || "",
           ipAddress: publicIp,
           pageUrl: window.location.href,
           xxTrustedFormUrl: certUrl,
