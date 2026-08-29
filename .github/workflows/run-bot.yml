@@ -7,6 +7,10 @@ on:
         description: 'Target US State for Decodo IP (e.g. California, Texas, Florida)'
         required: false
         default: 'California'
+      user_phone:
+        description: 'Phone Number for Click-to-Call Lead'
+        required: false
+        default: ''
   schedule:
     - cron: '0 */3 * * *'
 
@@ -38,4 +42,5 @@ jobs:
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
           USER_STATE: ${{ github.event.inputs.user_state || 'California' }}
+          USER_PHONE: ${{ github.event.inputs.user_phone || '' }}
           LANDING_PAGE_URL: 'https://securedrive-insurance.com/quotes/'
