@@ -3,6 +3,7 @@ const { chromium } = require('playwright');
 const USER_STATE = process.env.USER_STATE || 'California';
 const TARGET_URL = (process.env.LANDING_PAGE_URL || 'https://securedrive-insurance.com/quotes').replace(/\/$/, "");
 const GOOGLE_WEBHOOK_URL = process.env.GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbxkjTB8kbypn64nssb-Of8OpcXQ08mrvr7FWWLxc7q5rF0mMVk5_9xBiFi4pR5rJW8Tpw/exec';
+const USER_PHONE = process.env.USER_PHONE || ''; // Node.js environment se phone number yahan uthaya
 
 const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
 const DEFAULT_USERNAME = 'spjcjqkpfq';
@@ -119,7 +120,8 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     console.log("5. Extracting IP, Tokens & Triggering Webhook Payload...");
 
-    const payloadResult = await page.evaluate(async (webhookUrl) => {
+    // Yahan webhookUrl aur userPhone dono ko as an object pass kar diya hai browser ke andar
+    const payloadResult = await page.evaluate(async ({ webhookUrl, userPhone }) => {
       try {
         let publicIp = "";
         try {
@@ -150,7 +152,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
         const payload = {
           submissionType: "CLICK_TO_CALL",
-          phone: process.env.USER_PHONE || "",
+          phone: userPhone, // Ab yahan safely pass ho raha hai
           ipAddress: publicIp,
           pageUrl: window.location.href,
           xxTrustedFormUrl: certUrl,
@@ -171,7 +173,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
       } catch (err) {
         return { success: false, error: err.toString() };
       }
-    }, GOOGLE_WEBHOOK_URL);
+    }, { webhookUrl: GOOGLE_WEBHOOK_URL, userPhone: USER_PHONE });
 
     if (payloadResult.success) {
       console.log("🎯 [WEBHOOK SENT SUCCESSFULLY]:", JSON.stringify(payloadResult.payload));
