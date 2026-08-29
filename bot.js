@@ -82,7 +82,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
       await page.mouse.move(getRandomInt(50, 300), getRandomInt(100, 500)).catch(() => {});
       
       const stepPause = getRandomInt(3500, 5000);
-      console.log(`   Scrolled to Y:${pos} | Reading for ${(stepPause / 1000).toFixed(1)}s...`);
+      console.log(`    Scrolled to Y:${pos} | Reading for ${(stepPause / 1000).toFixed(1)}s...`);
       await delay(stepPause);
     }
 
