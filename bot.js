@@ -3,7 +3,7 @@ const { chromium } = require('playwright');
 const USER_STATE = process.env.USER_STATE || 'California';
 const TARGET_URL = (process.env.LANDING_PAGE_URL || 'https://securedrive-insurance.com/quotes').replace(/\/$/, "");
 const GOOGLE_WEBHOOK_URL = process.env.GOOGLE_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbxkjTB8kbypn64nssb-Of8OpcXQ08mrvr7FWWLxc7q5rF0mMVk5_9xBiFi4pR5rJW8Tpw/exec';
-const USER_PHONE = process.env.USER_PHONE || ''; // Node.js environment se phone number yahan uthaya
+const USER_PHONE = process.env.USER_PHONE || ''; 
 
 const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
 const DEFAULT_USERNAME = 'spjcjqkpfq';
@@ -120,65 +120,69 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     console.log("5. Extracting IP, Tokens & Triggering Webhook Payload...");
 
-    // Yahan webhookUrl aur userPhone dono ko as an object pass kar diya hai browser ke andar
-    const payloadResult = await page.evaluate(async ({ webhookUrl, userPhone }) => {
+    // DOM se data safely extract karna (Node.js mein fetch run hoga ab)
+    const extractedData = await page.evaluate(async () => {
+      let publicIp = "";
       try {
-        let publicIp = "";
-        try {
-          const ipRes = await fetch('https://api.ipify.org?format=json');
-          const ipData = await ipRes.json();
-          publicIp = ipData.ip || "";
-        } catch (ipErr) {
-          console.log("Failed to fetch IP:", ipErr);
-        }
-
-        const certUrl = document.getElementById('xxTrustedFormCertUrl')?.value || 
-                        document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || "";
-
-        const pingUrl = document.getElementById('xxTrustedFormPingUrl_0')?.value || 
-                        document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
-
-        let rawToken = document.getElementById('xxTrustedFormToken_0')?.value || "";
-        if (!rawToken && certUrl) {
-          const match = certUrl.match(/([a-f0-9]{40})/i);
-          rawToken = match ? match[1] : "";
-        } else if (rawToken.includes('/')) {
-          const parts = rawToken.split('/');
-          rawToken = parts[parts.length - 1];
-        }
-
-        const jornayaId = document.getElementById('leadid_token')?.value || 
-                          document.querySelector('input[name="jornaya_leadid"]')?.value || "";
-
-        const payload = {
-          submissionType: "CLICK_TO_CALL",
-          phone: userPhone, // Ab yahan safely pass ho raha hai
-          ipAddress: publicIp,
-          pageUrl: window.location.href,
-          xxTrustedFormUrl: certUrl,
-          xxTrustedFormToken: rawToken,
-          xxTrustedFormPingUrl: pingUrl,
-          jornayaLeadId: jornayaId,
-          timestamp: new Date().toISOString()
-        };
-
-        await fetch(webhookUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload)
-        });
-
-        return { success: true, payload };
-      } catch (err) {
-        return { success: false, error: err.toString() };
+        const ipRes = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipRes.json();
+        publicIp = ipData.ip || "";
+      } catch (ipErr) {
+        console.log("Failed to fetch IP:", ipErr);
       }
-    }, { webhookUrl: GOOGLE_WEBHOOK_URL, userPhone: USER_PHONE });
 
-    if (payloadResult.success) {
-      console.log("🎯 [WEBHOOK SENT SUCCESSFULLY]:", JSON.stringify(payloadResult.payload));
-    } else {
-      console.log("❌ [WEBHOOK FAILED]:", payloadResult.error);
+      const certUrl = document.getElementById('xxTrustedFormCertUrl')?.value || 
+                      document.querySelector('input[name="xxTrustedFormCertUrl"]')?.value || "";
+
+      const pingUrl = document.getElementById('xxTrustedFormPingUrl_0')?.value || 
+                      document.querySelector('input[name="xxTrustedFormPingUrl"]')?.value || "";
+
+      let rawToken = document.getElementById('xxTrustedFormToken_0')?.value || "";
+      if (!rawToken && certUrl) {
+        const match = certUrl.match(/([a-f0-9]{40})/i);
+        rawToken = match ? match[1] : "";
+      } else if (rawToken.includes('/')) {
+        const parts = rawToken.split('/');
+        rawToken = parts[parts.length - 1];
+      }
+
+      const jornayaId = document.getElementById('leadid_token')?.value || 
+                        document.querySelector('input[name="jornaya_leadid"]')?.value || "";
+
+      return {
+        publicIp,
+        certUrl,
+        pingUrl,
+        rawToken,
+        jornayaId,
+        pageUrl: window.location.href
+      };
+    });
+
+    const payload = {
+      submissionType: "CLICK_TO_CALL",
+      phone: USER_PHONE,
+      ipAddress: extractedData.publicIp,
+      pageUrl: extractedData.pageUrl,
+      xxTrustedFormUrl: extractedData.certUrl,
+      xxTrustedFormToken: extractedData.rawToken,
+      xxTrustedFormPingUrl: extractedData.pingUrl,
+      jornayaLeadId: extractedData.jornayaId,
+      timestamp: new Date().toISOString()
+    };
+
+    // Webhook request ab Node.js environment se direct hit hogi (No CORS / Fetch error)
+    try {
+      const webhookRes = await fetch(GOOGLE_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        redirect: 'follow'
+      });
+      
+      console.log("🎯 [WEBHOOK SENT SUCCESSFULLY]:", JSON.stringify(payload));
+    } catch (webhookErr) {
+      console.log("❌ [WEBHOOK FAILED]:", webhookErr.toString());
     }
 
     await delay(3000);
