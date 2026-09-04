@@ -6,8 +6,8 @@ const GOOGLE_WEBHOOK_URL = process.env.GOOGLE_WEBHOOK_URL || 'https://script.goo
 const USER_PHONE = process.env.USER_PHONE || ''; 
 
 const DEFAULT_SERVER = 'http://gate.decodo.com:10002';
-const DEFAULT_USERNAME = 'spjcjqkpfq';
-const DEFAULT_PASSWORD = 'fmd74wEhNbCr8=1gfE';
+const DEFAULT_USERNAME = 'spin2izwzw';
+const DEFAULT_PASSWORD = '04o8~ZpVxdaH3qtvYz';
 
 const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
