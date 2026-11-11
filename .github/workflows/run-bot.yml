@@ -37,7 +37,7 @@ jobs:
         run: npm install
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Execute Click-to-Call Bot with Virtual Display
         uses: GabrielBB/xvfb-action@v1
